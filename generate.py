@@ -49,15 +49,36 @@ def make_canny_image(
     return Image.fromarray(edges)
 
 
-def build_prompt(user_prompt: str, use_style_suffix: bool = True, lora_trigger: str = "") -> str:
-    """Combine user prompt with the dark fantasy style suffix and optional LoRA trigger word."""
+def build_prompt(prompt: str, use_style_suffix: bool = True, lora_trigger: str = "") -> str:
+    """
+    Builds the final prompt used by Stable Diffusion.
+    Adds the LoRA trigger word if provided, and adds a dark fantasy style suffix.
+    """
+
+    if prompt is None:
+        prompt = ""
+
+    if lora_trigger is None:
+        lora_trigger = ""
+
+    prompt = prompt.strip()
+    lora_trigger = lora_trigger.strip()
+
     parts = []
-    if lora_trigger.strip():
-        parts.append(lora_trigger.strip())
-    parts.append(user_prompt.strip())
+
+    if lora_trigger:
+        parts.append(lora_trigger)
+
+    if prompt:
+        parts.append(prompt)
+
     if use_style_suffix:
-        parts.append(STYLE_SUFFIX)
-    return ", ".join([part for part in parts if part])
+        parts.append(
+            "dark fantasy character concept art, highly detailed, realistic, "
+            "cinematic lighting, dramatic atmosphere, full body, sharp focus"
+        )
+
+    return ", ".join(parts)
 
 
 def load_pipeline(
