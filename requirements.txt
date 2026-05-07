@@ -8,3 +8,4 @@ pillow
 gradio
 numpy
 huggingface_hub
+controlnet-aux
