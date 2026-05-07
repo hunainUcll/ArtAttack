@@ -1,0 +1,17 @@
+this file is for me and my project partner to vent and brain storm the problems 
+
+
+the first thing i am stuck on is the damn open cv i am trying to make the genreated image extremely similar to the stick man one atleast the pose 
+
+the next big bit i have to worry about is finding the right dataset and training my lorea so the thing goes - 
+
+Stickman sketch
+     ↓
+Preprocessing
+     ↓
+ControlNet conditioning image
+     ↓
+SDXL + your LoRA + text prompt
+     ↓
+Dark fantasy character output
+
