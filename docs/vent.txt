@@ -15,3 +15,103 @@ SDXL + your LoRA + text prompt
      ↓
 Dark fantasy character output
 
+
+08/05/2026 - operation debloating the code 
+  What I Changed
+  I mostly made the code less repetitive. The project had the same values written in multiple places, which makes it
+  harder to maintain. For example, model IDs, prompt presets, negative prompts, and style text existed in both
+  generate.py, app.py, and src/config.py.
+
+  Now src/config.py is the single place for shared settings:
+
+  BASE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
+  VAE_MODEL_ID = "madebyollin/sdxl-vae-fp16-fix"
+
+  CONTROL_MODELS = {
+      "scribble": "xinsir/controlnet-scribble-sdxl-1.0",
+      "canny": "diffusers/controlnet-canny-sdxl-1.0",
+  }
+
+  That means if you want to change the model later, you edit one file instead of hunting through the app.
+
+  In generate.py, I removed duplicated config and imported it instead:
+
+  from src.config import (
+      BASE_MODEL_ID,
+      CONTROL_MODELS,
+      DEFAULT_CONTROL_MODE,
+      DEFAULT_NEGATIVE_PROMPT,
+      STYLE_SUFFIX,
+      VAE_MODEL_ID,
+  )
+
+  So generate.py is now focused on actual generation logic:
+
+  - prepare the sketch
+  - make the ControlNet image
+  - load SDXL + ControlNet
+  - build the final prompt
+  - generate the image
+  - save output from command line
+
+  I also simplified code like this:
+
+  Before, the code manually expanded grayscale image data into 3 color channels:
+
+  edges = edges[:, :, None]
+  edges = np.concatenate([edges, edges, edges], axis=2)
+
+  Now it does the same thing shorter:
+
+  return Image.fromarray(np.repeat(edges[:, :, None], 3, axis=2))
+
+  That still creates a 3-channel RGB-style image, which ControlNet expects.
+
+  In app.py, I removed the duplicate prompt presets and imported them from src/config.py.
+
+  I also simplified the pipeline cache. The old version tracked three globals:
+
+  PIPE = None
+  CURRENT_LORA_PATH = None
+  CURRENT_CONTROL_MODE = None
+
+  Now it tracks one cache key:
+
+  PIPE = None
+  CACHE_KEY = None
+
+  The cache key is just:
+
+  cache_key = (lora_path, control_mode)
+
+  Meaning: if the LoRA path or ControlNet mode changes, reload the model. Otherwise, reuse the already-loaded pipeline.
+  Same behavior, less code.
+
+  I also added this helper:
+
+  def clean_text(value: str | None) -> str:
+      return (value or "").strip()
+
+  That avoids repeating checks like:
+
+  if lora_path is None:
+      lora_path = ""
+
+  lora_path = lora_path.strip()
+
+  So the logic is simpler, but the behavior stays the same.
+
+  In short: I did not remove features. I mostly moved shared settings into src/config.py, removed duplicated code, and
+  shortened repetitive Python patterns.
+
+
+update i found the problem with the poses -"the scribble ControlNet often “decorates” lines rather than converting a stick skeleton into body pose".
+
+
+lets try to fix this shit now shall we  ?
+
+The main change is that pose is now the default conditioning mode in src/config.py:9, using thibaud/controlnet-
+  openpose-sdxl-1.0. I added make_pose_image() in generate.py:87 to convert the stick figure into a colored OpenPose-
+  style skeleton instead of passing it as raw scribble lines.
+
+  

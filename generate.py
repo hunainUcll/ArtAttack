@@ -1,14 +1,9 @@
-"""
-Sketch2DarkFantasy - SDXL + sketch-conditioned generation module.
-
-Pipeline:
-Sketch image -> line preprocessing -> SDXL ControlNet -> dark fantasy output
-"""
+"""SDXL + ControlNet generation for Sketch2DarkFantasy."""
 
 import argparse
 import os
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Tuple
 
 import cv2
 import numpy as np
@@ -22,38 +17,15 @@ from diffusers import (
     EulerAncestralDiscreteScheduler,
 )
 
-
-# ------------------------------------------------------------
-# Model configuration
-# ------------------------------------------------------------
-
-BASE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
-CONTROL_MODELS = {
-    "scribble": "xinsir/controlnet-scribble-sdxl-1.0",
-    "canny": "diffusers/controlnet-canny-sdxl-1.0",
-}
-DEFAULT_CONTROL_MODE: Literal["scribble", "canny"] = "scribble"
-
-# Optional better VAE for SDXL stability
-VAE_MODEL_ID = "madebyollin/sdxl-vae-fp16-fix"
-
-STYLE_SUFFIX = (
-    "dark fantasy character concept art, full body character, highly detailed, "
-    "realistic, cinematic lighting, dramatic atmosphere, sharp focus, "
-    "professional fantasy illustration, detailed armor, dark medieval background"
+from src.config import (
+    BASE_MODEL_ID,
+    CONTROL_MODELS,
+    DEFAULT_CONTROL_MODE,
+    DEFAULT_NEGATIVE_PROMPT,
+    STYLE_SUFFIX,
+    VAE_MODEL_ID,
 )
 
-DEFAULT_NEGATIVE_PROMPT = (
-    "low quality, worst quality, blurry, pixelated, bad anatomy, bad hands, "
-    "extra fingers, missing fingers, extra limbs, missing limbs, deformed body, "
-    "distorted face, ugly face, cropped, out of frame, text, watermark, logo, "
-    "cartoon, childish, stick figure, doodle, simple line art"
-)
-
-
-# ------------------------------------------------------------
-# Device helpers
-# ------------------------------------------------------------
 
 def get_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
@@ -63,15 +35,7 @@ def get_dtype():
     return torch.float16 if get_device() == "cuda" else torch.float32
 
 
-# ------------------------------------------------------------
-# Image preprocessing
-# ------------------------------------------------------------
-
 def resize_image(image: Image.Image, size: int = 1024) -> Image.Image:
-    """
-    Resize image to square SDXL resolution.
-    SDXL works best at 1024x1024.
-    """
     return image.convert("RGB").resize((size, size))
 
 
@@ -81,18 +45,9 @@ def make_canny_image(
     high_threshold: int = 180,
     size: int = 1024,
 ) -> Image.Image:
-    """
-    Converts sketch to Canny edge image for ControlNet.
-    """
     image = resize_image(image, size=size)
-
-    image_np = np.array(image)
-    edges = cv2.Canny(image_np, low_threshold, high_threshold)
-
-    edges = edges[:, :, None]
-    edges = np.concatenate([edges, edges, edges], axis=2)
-
-    return Image.fromarray(edges)
+    edges = cv2.Canny(np.array(image), low_threshold, high_threshold)
+    return Image.fromarray(np.repeat(edges[:, :, None], 3, axis=2))
 
 
 def make_scribble_image(
@@ -100,23 +55,79 @@ def make_scribble_image(
     size: int = 1024,
     threshold: int = 210,
 ) -> Image.Image:
-    """
-    Converts rough black-on-white stick sketches into white lines on black.
-
-    This usually preserves the intended pose better than Canny for stick figures,
-    because Canny tends to detect both sides of each drawn stroke.
-    """
     image = resize_image(image, size=size).convert("L")
-    image_np = np.array(image)
-
-    lines = np.where(image_np < threshold, 255, 0).astype(np.uint8)
+    lines = np.where(np.array(image) < threshold, 255, 0).astype(np.uint8)
     kernel = np.ones((3, 3), np.uint8)
     lines = cv2.dilate(lines, kernel, iterations=1)
+    return Image.fromarray(np.repeat(lines[:, :, None], 3, axis=2))
 
-    lines = lines[:, :, None]
-    lines = np.concatenate([lines, lines, lines], axis=2)
 
-    return Image.fromarray(lines)
+OPENPOSE_BODY_COLORS = [
+    (255, 0, 0),
+    (255, 85, 0),
+    (255, 170, 0),
+    (255, 255, 0),
+    (170, 255, 0),
+    (85, 255, 0),
+    (0, 255, 0),
+    (0, 255, 85),
+    (0, 255, 170),
+    (0, 255, 255),
+    (0, 170, 255),
+    (0, 85, 255),
+    (0, 0, 255),
+    (85, 0, 255),
+    (170, 0, 255),
+    (255, 0, 255),
+    (255, 0, 170),
+    (255, 0, 85),
+]
+
+
+def make_pose_image(
+    image: Image.Image,
+    size: int = 1024,
+    threshold: int = 210,
+) -> Image.Image:
+    """Approximate an OpenPose-style control map from a simple stick figure."""
+    image = resize_image(image, size=size).convert("L")
+    lines = np.where(np.array(image) < threshold, 255, 0).astype(np.uint8)
+
+    kernel = np.ones((3, 3), np.uint8)
+    lines = cv2.morphologyEx(lines, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    min_line_length = max(32, size // 14)
+    max_line_gap = max(12, size // 70)
+    hough_threshold = max(28, size // 32)
+    detected = cv2.HoughLinesP(
+        lines,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=hough_threshold,
+        minLineLength=min_line_length,
+        maxLineGap=max_line_gap,
+    )
+
+    canvas = np.zeros((size, size, 3), dtype=np.uint8)
+
+    if detected is None:
+        return make_scribble_image(image, size=size, threshold=threshold)
+
+    segments = [line[0] for line in detected]
+    segments.sort(
+        key=lambda segment: (
+            ((segment[1] + segment[3]) / 2),
+            ((segment[0] + segment[2]) / 2),
+        )
+    )
+
+    for index, (x1, y1, x2, y2) in enumerate(segments):
+        color = OPENPOSE_BODY_COLORS[index % len(OPENPOSE_BODY_COLORS)]
+        cv2.line(canvas, (x1, y1), (x2, y2), color, thickness=max(4, size // 170))
+        cv2.circle(canvas, (x1, y1), radius=max(3, size // 220), color=color, thickness=-1)
+        cv2.circle(canvas, (x2, y2), radius=max(3, size // 220), color=color, thickness=-1)
+
+    return Image.fromarray(canvas)
 
 
 def make_control_image(
@@ -127,15 +138,13 @@ def make_control_image(
     size: int = 1024,
 ) -> Image.Image:
     if control_mode == "canny":
-        return make_canny_image(
-            image,
-            low_threshold=low_threshold,
-            high_threshold=high_threshold,
-            size=size,
-        )
+        return make_canny_image(image, low_threshold, high_threshold, size)
 
     if control_mode == "scribble":
         return make_scribble_image(image, size=size)
+
+    if control_mode == "pose":
+        return make_pose_image(image, size=size)
 
     raise ValueError(
         f"Unknown control mode: {control_mode}. "
@@ -143,56 +152,24 @@ def make_control_image(
     )
 
 
-# ------------------------------------------------------------
-# Prompt builder
-# ------------------------------------------------------------
-
 def build_prompt(prompt: str, lora_trigger: str = "") -> str:
-    if prompt is None:
-        prompt = ""
-
-    if lora_trigger is None:
-        lora_trigger = ""
-
-    prompt = prompt.strip()
-    lora_trigger = lora_trigger.strip()
-
-    parts = []
-
-    if lora_trigger:
-        parts.append(lora_trigger)
-
-    if prompt:
-        parts.append(prompt)
-
-    parts.append(STYLE_SUFFIX)
-
-    return ", ".join(parts)
-
-
-# ------------------------------------------------------------
-# Pipeline loading
-# ------------------------------------------------------------
+    parts = [part.strip() for part in (lora_trigger or "", prompt or "", STYLE_SUFFIX)]
+    return ", ".join(part for part in parts if part)
 
 def load_pipeline(
     lora_path: str | None = None,
     control_mode: str = DEFAULT_CONTROL_MODE,
 ):
-    """
-    Loads SDXL + SDXL ControlNet.
-
-    This is heavier than SD 1.5, but your RTX 4070 Ti Super should handle it.
-    """
     device = get_device()
     dtype = get_dtype()
 
-    print(f"Using device: {device}")
     if control_mode not in CONTROL_MODELS:
         raise ValueError(
             f"Unknown control mode: {control_mode}. "
             f"Expected one of: {', '.join(CONTROL_MODELS)}"
         )
 
+    print(f"Using device: {device}")
     controlnet_model_id = CONTROL_MODELS[control_mode]
 
     print(f"Loading {control_mode} ControlNet: {controlnet_model_id}")
@@ -222,7 +199,6 @@ def load_pipeline(
 
     pipe.to(device)
 
-    # Helpful for VRAM stability
     pipe.enable_attention_slicing()
     pipe.enable_vae_slicing()
     pipe.enable_vae_tiling()
@@ -241,10 +217,6 @@ def load_pipeline(
     return pipe
 
 
-# ------------------------------------------------------------
-# Generation
-# ------------------------------------------------------------
-
 def generate_image(
     pipe,
     sketch: Image.Image,
@@ -260,15 +232,7 @@ def generate_image(
     lora_trigger: str = "",
     control_mode: str = DEFAULT_CONTROL_MODE,
 ) -> Tuple[Image.Image, Image.Image, str]:
-    """
-    Generates image from sketch + text prompt.
-
-    Returns:
-    generated_image, control_image, final_prompt
-    """
-
     device = get_device()
-
     control_image = make_control_image(
         sketch,
         control_mode=control_mode,
@@ -295,10 +259,6 @@ def generate_image(
 
     return output, control_image, final_prompt
 
-
-# ------------------------------------------------------------
-# CLI support
-# ------------------------------------------------------------
 
 def save_generation(
     pipe,

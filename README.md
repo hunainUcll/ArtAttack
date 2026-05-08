@@ -5,8 +5,8 @@
 The project uses:
 
 - Stable Diffusion for image generation
-- ControlNet for sketch/line-based conditioning
-- Scribble preprocessing for stick figures and Canny preprocessing as a fallback
+- ControlNet for pose and sketch conditioning
+- Pose preprocessing for stick figures, with Scribble and Canny fallbacks
 - Gradio for the user interface
 - Optional LoRA support for dark fantasy style adaptation
 
@@ -22,7 +22,7 @@ Many people have creative ideas for fantasy characters but cannot draw them. Tex
 ```text
 User sketch + text prompt
         ↓
-Image preprocessing with Scribble or Canny line extraction
+Image preprocessing with Pose, Scribble, or Canny conditioning
         ↓
 ControlNet conditioning
         ↓
@@ -97,7 +97,7 @@ orc warrior with giant axe, heavy armor, smoky battlefield, dramatic lighting
 | Guidance scale | How strongly the model follows the text prompt. |
 | Conditioning scale | How strongly the model follows the sketch/line map. |
 | Seed | Makes results reproducible. |
-| Sketch conditioning | `scribble` is best for stick figures; `canny` is available for cleaner edge sketches. |
+| Sketch conditioning | `pose` is best for stick-figure body poses; `scribble` is useful for rough shape sketches; `canny` is available for cleaner edge sketches. |
 | Canny thresholds | Control how much detail is extracted from the sketch when Canny mode is selected. |
 
 ## Optional LoRA extension
@@ -120,5 +120,5 @@ In the final defense, describe this honestly:
 - Add a browser drawing canvas.
 - Train a small custom LoRA on dark fantasy character art.
 - Add side-by-side comparison with and without LoRA.
-- Add OpenPose-style pose preprocessing.
+- Improve OpenPose-style pose preprocessing for messy sketches and props.
 - Add automatic prompt suggestions.
