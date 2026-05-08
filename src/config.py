@@ -1,7 +1,11 @@
 """Configuration for Sketch2DarkFantasy."""
 
-BASE_MODEL_ID = "runwayml/stable-diffusion-v1-5"
-CONTROLNET_MODEL_ID = "lllyasviel/sd-controlnet-canny"
+BASE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
+CONTROL_MODELS = {
+    "scribble": "xinsir/controlnet-scribble-sdxl-1.0",
+    "canny": "diffusers/controlnet-canny-sdxl-1.0",
+}
+DEFAULT_CONTROL_MODE = "scribble"
 
 DEFAULT_NEGATIVE_PROMPT = (
     "blurry, low quality, worst quality, bad anatomy, bad hands, "

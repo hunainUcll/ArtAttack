@@ -29,11 +29,11 @@ Stable Diffusion is used as the main image generation model. It generates an ima
 
 ### ControlNet
 
-ControlNet is used to guide the generation process with an additional image input. In this project, the input sketch is converted into an edge map. This edge map helps the model follow the user's intended pose and composition.
+ControlNet is used to guide the generation process with an additional image input. In this project, the input sketch is converted into a line map. Scribble mode is used by default because it handles rough stick-figure drawings better than Canny edge outlines.
 
-### Canny preprocessing
+### Scribble and Canny preprocessing
 
-The input sketch is processed with Canny edge detection. This creates a clear black-and-white edge image for ControlNet.
+The input sketch is processed into white guide lines on a black background. For stick figures, the default Scribble preprocessing preserves the drawn pose directly. Canny preprocessing remains available for cleaner edge sketches.
 
 ### Prompt engineering
 
@@ -48,11 +48,11 @@ A LoRA adapter can be used as an extension to specialize the model toward a dark
 ```text
 User sketch + prompt
         ↓
-Resize image to 512x512
+Resize image to 1024x1024
         ↓
-Apply Canny edge detection
+Apply Scribble or Canny line extraction
         ↓
-Use edge map as ControlNet conditioning image
+Use line map as conditioning image
         ↓
 Generate final image with Stable Diffusion
         ↓
@@ -88,7 +88,7 @@ The system is evaluated using several sketches and prompts. Each result is judge
 
 ## 7. Limitations
 
-The system works best with clear full-body sketches. Very rough stick figures can produce inconsistent anatomy. Hands, weapons, and faces are sometimes distorted. The model also sometimes prioritizes the text prompt over the sketch, especially when the ControlNet scale is too low.
+The system works best with clear full-body sketches. Very rough stick figures can still produce inconsistent anatomy. Hands, weapons, and faces are sometimes distorted. The model also sometimes prioritizes the text prompt over the sketch, especially when the conditioning scale is too low.
 
 ## 8. Future work
 

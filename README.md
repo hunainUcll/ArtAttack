@@ -5,8 +5,8 @@
 The project uses:
 
 - Stable Diffusion for image generation
-- ControlNet for sketch/edge-based conditioning
-- Canny preprocessing for converting the input sketch into a control image
+- ControlNet for sketch/line-based conditioning
+- Scribble preprocessing for stick figures and Canny preprocessing as a fallback
 - Gradio for the user interface
 - Optional LoRA support for dark fantasy style adaptation
 
@@ -22,7 +22,7 @@ Many people have creative ideas for fantasy characters but cannot draw them. Tex
 ```text
 User sketch + text prompt
         ↓
-Image preprocessing with Canny edge detection
+Image preprocessing with Scribble or Canny line extraction
         ↓
 ControlNet conditioning
         ↓
@@ -69,7 +69,7 @@ The generated image will be saved to:
 outputs/generated.png
 ```
 
-The ControlNet conditioning image will be saved to:
+The conditioning image will be saved to:
 
 ```text
 outputs/control_image.png
@@ -95,9 +95,10 @@ orc warrior with giant axe, heavy armor, smoky battlefield, dramatic lighting
 |---|---|
 | Inference steps | Number of denoising steps. Higher can improve quality but takes longer. |
 | Guidance scale | How strongly the model follows the text prompt. |
-| ControlNet scale | How strongly the model follows the sketch/edge map. |
+| Conditioning scale | How strongly the model follows the sketch/line map. |
 | Seed | Makes results reproducible. |
-| Canny thresholds | Control how much detail is extracted from the sketch. |
+| Sketch conditioning | `scribble` is best for stick figures; `canny` is available for cleaner edge sketches. |
+| Canny thresholds | Control how much detail is extracted from the sketch when Canny mode is selected. |
 
 ## Optional LoRA extension
 
@@ -119,5 +120,5 @@ In the final defense, describe this honestly:
 - Add a browser drawing canvas.
 - Train a small custom LoRA on dark fantasy character art.
 - Add side-by-side comparison with and without LoRA.
-- Add better pose preprocessing.
+- Add OpenPose-style pose preprocessing.
 - Add automatic prompt suggestions.
