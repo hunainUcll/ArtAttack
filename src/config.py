@@ -2,8 +2,11 @@
 
 from typing import Literal
 
-BASE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
+BASE_MODEL_ID = "LyliaEngine/Pony_Diffusion_V6_XL"
+BASE_MODEL_VARIANT = None
 VAE_MODEL_ID = "madebyollin/sdxl-vae-fp16-fix"
+CLIP_SKIP = 2
+PONY_PROMPT_PREFIX = "score_9, score_8_up, score_7_up, score_6_up, rating_safe"
 
 CONTROL_MODELS = {
     "pose": "thibaud/controlnet-openpose-sdxl-1.0",
@@ -16,7 +19,7 @@ DEFAULT_NEGATIVE_PROMPT = (
     "low quality, worst quality, blurry, pixelated, bad anatomy, bad hands, "
     "extra fingers, missing fingers, extra limbs, missing limbs, deformed body, "
     "distorted face, ugly face, cropped, out of frame, text, watermark, logo, "
-    "cartoon, childish, stick figure, doodle, simple line art"
+    "stick figure, doodle, simple line art, nude, nsfw, rating_explicit"
 )
 
 STYLE_SUFFIX = (
