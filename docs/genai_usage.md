@@ -21,3 +21,5 @@ GenAI tools were used during this project to support planning, explanation, and 
 ## Reflection
 
 GenAI was useful as a support tool, especially for understanding unfamiliar libraries and creating a first working structure. However, the final implementation still required testing, debugging, interpretation, and project-specific decisions by the team.
+
+

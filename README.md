@@ -122,3 +122,4 @@ In the final defense, describe this honestly:
 - Add side-by-side comparison with and without LoRA.
 - Improve OpenPose-style pose preprocessing for messy sketches and props.
 - Add automatic prompt suggestions.
+  
