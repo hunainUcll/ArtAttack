@@ -122,7 +122,7 @@ Generate dark fantasy character concept art from a rough sketch and a text promp
 
 This prototype uses:
 
-`Pony Diffusion XL + Pose/Scribble/Canny conditioning + optional LoRA`
+`Stable Diffusion XL + Pose/Scribble/Canny conditioning + optional LoRA`
 
 Pose mode is best for stick-figure body poses. Scribble mode is better for rough shape sketches.  
 The prompt controls the character details.  

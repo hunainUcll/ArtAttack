@@ -115,3 +115,5 @@ The main change is that pose is now the default conditioning mode in src/config.
   style skeleton instead of passing it as raw scribble lines.
 
   
+  okay faizan here, hunain changed to using ppony diffusion xl but didnt actually test it there were many bugs and the resutls were extremely bad so i switch back to sdxl 
+  

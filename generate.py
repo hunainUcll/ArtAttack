@@ -1,7 +1,6 @@
-"""Pony Diffusion XL + ControlNet generation for Sketch2DarkFantasy."""
+"""SDXL + ControlNet generation for Sketch2DarkFantasy."""
 
 import argparse
-import inspect
 import os
 from pathlib import Path
 from typing import Tuple
@@ -20,12 +19,9 @@ from diffusers import (
 
 from src.config import (
     BASE_MODEL_ID,
-    BASE_MODEL_VARIANT,
-    CLIP_SKIP,
     CONTROL_MODELS,
     DEFAULT_CONTROL_MODE,
     DEFAULT_NEGATIVE_PROMPT,
-    PONY_PROMPT_PREFIX,
     STYLE_SUFFIX,
     VAE_MODEL_ID,
 )
@@ -157,15 +153,7 @@ def make_control_image(
 
 
 def build_prompt(prompt: str, lora_trigger: str = "") -> str:
-    parts = [
-        part.strip()
-        for part in (
-            PONY_PROMPT_PREFIX,
-            lora_trigger or "",
-            prompt or "",
-            STYLE_SUFFIX,
-        )
-    ]
+    parts = [part.strip() for part in (lora_trigger or "", prompt or "", STYLE_SUFFIX)]
     return ", ".join(part for part in parts if part)
 
 def load_pipeline(
@@ -197,19 +185,14 @@ def load_pipeline(
         torch_dtype=dtype,
     )
 
-    print(f"Loading Pony Diffusion XL base model: {BASE_MODEL_ID}")
-    model_kwargs = {
-        "controlnet": controlnet,
-        "vae": vae,
-        "torch_dtype": dtype,
-        "use_safetensors": True,
-    }
-    if BASE_MODEL_VARIANT:
-        model_kwargs["variant"] = BASE_MODEL_VARIANT
-
+    print(f"Loading SDXL base model: {BASE_MODEL_ID}")
     pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
         BASE_MODEL_ID,
-        **model_kwargs,
+        controlnet=controlnet,
+        vae=vae,
+        torch_dtype=dtype,
+        variant="fp16" if device == "cuda" else None,
+        use_safetensors=True,
     )
 
     pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
@@ -262,22 +245,17 @@ def generate_image(
 
     generator = torch.Generator(device=device).manual_seed(int(seed))
 
-    generation_kwargs = {
-        "prompt": final_prompt,
-        "negative_prompt": negative_prompt,
-        "image": control_image,
-        "num_inference_steps": int(steps),
-        "guidance_scale": float(guidance_scale),
-        "controlnet_conditioning_scale": float(controlnet_conditioning_scale),
-        "generator": generator,
-        "width": size,
-        "height": size,
-    }
-
-    if "clip_skip" in inspect.signature(pipe.__call__).parameters:
-        generation_kwargs["clip_skip"] = CLIP_SKIP
-
-    output = pipe(**generation_kwargs).images[0]
+    output = pipe(
+        prompt=final_prompt,
+        negative_prompt=negative_prompt,
+        image=control_image,
+        num_inference_steps=int(steps),
+        guidance_scale=float(guidance_scale),
+        controlnet_conditioning_scale=float(controlnet_conditioning_scale),
+        generator=generator,
+        width=size,
+        height=size,
+    ).images[0]
 
     return output, control_image, final_prompt
 
@@ -312,7 +290,7 @@ def save_generation(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate Pony Diffusion XL dark fantasy character from sketch.")
+    parser = argparse.ArgumentParser(description="Generate SDXL dark fantasy character from sketch.")
     parser.add_argument("--sketch", default="examples/sample_sketches/sketch.png")
     parser.add_argument("--prompt", default="full body dark fantasy knight holding a glowing sword")
     parser.add_argument("--output", default="outputs/generated.png")
