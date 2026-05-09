@@ -1,125 +1,90 @@
-# Sketch2DarkFantasy
+# Art Attack
 
-**Sketch2DarkFantasy** is a semester project prototype that turns a rough user sketch and a short text prompt into dark fantasy character concept art.
+Art Attack is a semester project prototype that turns a rough sketch and a text prompt into dark fantasy character concept art.
 
-The project uses:
+The project uses Stable Diffusion XL for image generation, optional ControlNet conditioning for sketches, and an experimental SDXL LoRA trained on fantasy RPG character art.
 
-- Stable Diffusion for image generation
-- ControlNet for pose and sketch conditioning
-- Pose preprocessing for stick figures, with Scribble and Canny fallbacks
-- Gradio for the user interface
-- Optional LoRA support for dark fantasy style adaptation
+## Features
 
-## Project goal
+- Gradio interface in `app.py`
+- Prompt-only generation with `none` mode
+- Sketch-conditioned generation with `pose`, `scribble`, and `canny`
+- Optional LoRA loading from `lora/trained_lora`
+- Latest generated files saved to `results/input_1.png` and `results/output_1.png`
 
-Many people have creative ideas for fantasy characters but cannot draw them. Text-to-image tools can create impressive images, but the user has limited control over pose and composition. This project solves that by combining two inputs:
-
-1. A rough sketch that controls pose/composition
-2. A text prompt that controls character details/style
-
-## Pipeline
+## Project Structure
 
 ```text
-User sketch + text prompt
-        ↓
-Image preprocessing with Pose, Scribble, or Canny conditioning
-        ↓
-ControlNet conditioning
-        ↓
-Stable Diffusion generation
-        ↓
-Dark fantasy character output
+app.py                  Gradio user interface
+generate.py             SDXL, ControlNet, LoRA, and result-saving logic
+src/config.py           Model IDs, presets, prompts, and settings
+lora/                   Dataset preparation notebook/script and trained LoRA
+results/                Latest generated input/output images
+docs/vent.txt           Development notes and rough decision log
+technical_report.md     Final project report
 ```
 
-## Installation
-
-A GPU environment such as Google Colab is strongly recommended.
+## Setup
 
 ```bash
-git clone <your-repo-url>
-cd sketch2darkfantasy
 pip install -r requirements.txt
 ```
 
-## Run the Gradio app
+An NVIDIA GPU is strongly recommended. The project was tested with an RTX 4070 Ti SUPER.
+
+## Run The App
 
 ```bash
 python app.py
 ```
 
-Then open the local Gradio link, upload or draw a sketch, write a prompt, and click **Generate**.
-
-## Run from command line
-
-Put a sketch at:
+Open the local Gradio URL, usually:
 
 ```text
-examples/sample_sketches/sketch.png
+http://127.0.0.1:7860
 ```
 
-Then run:
+## Suggested Test Settings
+
+For a fast LoRA test:
+
+- Sketch conditioning: `none`
+- LoRA path: `lora/trained_lora`
+- LoRA trigger: `artattackstyle`
+- LoRA scale: `0.6`
+- Image size: `768`
+- Steps: `25`
+
+Example prompt:
+
+```text
+full body dark fantasy tiefling warrior, black armor, glowing sword, ruined castle background
+```
+
+## LoRA Training
+
+The quick local LoRA was trained with:
+
+- Dataset: `0xJustin/Dungeons-and-Diffusion`
+- Local subset: `lora/train_dataset_300`
+- Images: 300
+- Resolution: 512
+- Steps: 300
+- Rank: 8
+- Trigger word: `artattackstyle`
+
+To recreate the 300-image subset:
 
 ```bash
-python generate.py --sketch examples/sample_sketches/sketch.png --prompt "hooded knight holding a glowing sword"
+python lora/prepare_dataset.py
 ```
 
-The generated image will be saved to:
+To train from the notebook, open:
 
 ```text
-outputs/generated.png
+lora/train_art_attack_lora.ipynb
 ```
 
-The conditioning image will be saved to:
+## Notes
 
-```text
-outputs/control_image.png
-```
-
-## Example prompts
-
-```text
-hooded knight holding a glowing sword, black armor, ancient ruins
-```
-
-```text
-necromancer with skull staff, black robes, green magical aura, graveyard background
-```
-
-```text
-orc warrior with giant axe, heavy armor, smoky battlefield, dramatic lighting
-```
-
-## Important parameters
-
-| Parameter | Meaning |
-|---|---|
-| Inference steps | Number of denoising steps. Higher can improve quality but takes longer. |
-| Guidance scale | How strongly the model follows the text prompt. |
-| Conditioning scale | How strongly the model follows the sketch/line map. |
-| Seed | Makes results reproducible. |
-| Sketch conditioning | `pose` is best for stick-figure body poses; `scribble` is useful for rough shape sketches; `canny` is available for cleaner edge sketches. |
-| Canny thresholds | Control how much detail is extracted from the sketch when Canny mode is selected. |
-
-## Optional LoRA extension
-
-The project supports the idea of adding a LoRA trigger word and loading LoRA weights. A LoRA can make the output more consistent with a dark fantasy style.
-
-In the final defense, describe this honestly:
-
-> The main working prototype uses pretrained Stable Diffusion and ControlNet. LoRA adaptation is included as an extension to specialize the output style toward dark fantasy character art.
-
-## Limitations
-
-- Very rough sketches may not give enough structure for the model.
-- Hands, weapons, and faces can become distorted.
-- The model follows clear silhouettes better than messy sketches.
-- A custom LoRA could improve style consistency but requires a clean dataset and GPU training time.
-
-## Future improvements
-
-- Add a browser drawing canvas.
-- Train a small custom LoRA on dark fantasy character art.
-- Add side-by-side comparison with and without LoRA.
-- Improve OpenPose-style pose preprocessing for messy sketches and props.
-- Add automatic prompt suggestions.
-  
+The quick LoRA is only an experiment. Because it was trained for speed, it may produce subtle changes at low scale and artifacts at high scale. Start around `0.4` to `0.6`, then increase carefully.

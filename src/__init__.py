@@ -1,1 +1,1 @@
-"""Sketch2DarkFantasy source package."""
+"""Art Attack source package."""

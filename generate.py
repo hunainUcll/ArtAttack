@@ -1,4 +1,4 @@
-"""SDXL + ControlNet generation for Sketch2DarkFantasy."""
+"""SDXL generation for Art Attack."""
 
 import argparse
 import os
@@ -11,20 +11,26 @@ import torch
 from PIL import Image
 
 from diffusers import (
-    ControlNetModel,
-    StableDiffusionXLControlNetPipeline,
     AutoencoderKL,
+    ControlNetModel,
+    StableDiffusionXLPipeline,
+    StableDiffusionXLControlNetPipeline,
     EulerAncestralDiscreteScheduler,
 )
 
 from src.config import (
     BASE_MODEL_ID,
+    CONTROL_MODES,
     CONTROL_MODELS,
     DEFAULT_CONTROL_MODE,
     DEFAULT_NEGATIVE_PROMPT,
     STYLE_SUFFIX,
     VAE_MODEL_ID,
 )
+
+RESULTS_DIR = Path("results")
+INPUT_PATH = RESULTS_DIR / "input_1.png"
+OUTPUT_PATH = RESULTS_DIR / "output_1.png"
 
 
 # Resize every input sketch to the square size expected by SDXL ControlNet.
@@ -134,6 +140,9 @@ def make_control_image(
     high_threshold: int = 180,
     size: int = 1024,
 ) -> Image.Image:
+    if control_mode == "none":
+        raise ValueError("Control image is not used when control mode is none.")
+
     if control_mode == "canny":
         return make_canny_image(image, low_threshold, high_threshold, size)
 
@@ -145,7 +154,7 @@ def make_control_image(
 
     raise ValueError(
         f"Unknown control mode: {control_mode}. "
-        f"Expected one of: {', '.join(CONTROL_MODELS)}"
+        f"Expected one of: {', '.join(CONTROL_MODES)}"
     )
 
 
@@ -155,15 +164,15 @@ def build_prompt(prompt: str, lora_trigger: str = "") -> str:
     return ", ".join(part for part in parts if part)
 
 
-# Load SDXL, the selected ControlNet, and an optional LoRA.
+# Load SDXL, optionally with the selected ControlNet, and an optional LoRA.
 def load_pipeline(
     lora_path: str | None = None,
     control_mode: str = DEFAULT_CONTROL_MODE,
 ):
-    if control_mode not in CONTROL_MODELS:
+    if control_mode not in CONTROL_MODES:
         raise ValueError(
             f"Unknown control mode: {control_mode}. "
-            f"Expected one of: {', '.join(CONTROL_MODELS)}"
+            f"Expected one of: {', '.join(CONTROL_MODES)}"
         )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -171,12 +180,6 @@ def load_pipeline(
     variant = "fp16" if device == "cuda" else None
 
     print(f"Using device: {device}")
-    controlnet_model_id = CONTROL_MODELS[control_mode]
-    print(f"Loading {control_mode} ControlNet: {controlnet_model_id}")
-    controlnet = ControlNetModel.from_pretrained(
-        controlnet_model_id,
-        torch_dtype=dtype,
-    )
 
     print(f"Loading VAE: {VAE_MODEL_ID}")
     vae = AutoencoderKL.from_pretrained(
@@ -184,23 +187,34 @@ def load_pipeline(
         torch_dtype=dtype,
     )
 
+    pipeline_class = StableDiffusionXLPipeline
+    pipeline_kwargs = {}
+
+    if control_mode != "none":
+        controlnet_model_id = CONTROL_MODELS[control_mode]
+        print(f"Loading {control_mode} ControlNet: {controlnet_model_id}")
+        pipeline_class = StableDiffusionXLControlNetPipeline
+        pipeline_kwargs["controlnet"] = ControlNetModel.from_pretrained(
+            controlnet_model_id,
+            torch_dtype=dtype,
+        )
+
     print(f"Loading SDXL base model: {BASE_MODEL_ID}")
-    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+    pipe = pipeline_class.from_pretrained(
         BASE_MODEL_ID,
-        controlnet=controlnet,
         vae=vae,
         torch_dtype=dtype,
         variant=variant,
         use_safetensors=True,
+        **pipeline_kwargs,
     )
 
     pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
 
     pipe.to(device)
 
-    pipe.enable_attention_slicing()
-    pipe.enable_vae_slicing()
-    pipe.enable_vae_tiling()
+    pipe.vae.enable_slicing()
+    pipe.vae.enable_tiling()
 
     if device == "cuda":
         try:
@@ -211,15 +225,31 @@ def load_pipeline(
 
     if lora_path:
         print(f"Loading LoRA from: {lora_path}")
-        pipe.load_lora_weights(lora_path)
+        pipe.load_lora_weights(lora_path, adapter_name="artattack")
+        pipe._artattack_lora_loaded = True
 
     return pipe
 
 
-# Generate one image from the sketch and return the generated image, control image, and final prompt.
+# Save the latest input and output only, overwriting the previous test result.
+def save_latest_result(sketch: Image.Image | None, output: Image.Image) -> Tuple[Path | None, Path]:
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    input_path = None
+
+    if sketch is not None:
+        sketch.convert("RGB").save(INPUT_PATH)
+        input_path = INPUT_PATH
+    elif INPUT_PATH.exists():
+        INPUT_PATH.unlink()
+
+    output.save(OUTPUT_PATH)
+    return input_path, OUTPUT_PATH
+
+
+# Generate one image and return the generated image, optional control image, and final prompt.
 def generate_image(
     pipe,
-    sketch: Image.Image,
+    sketch: Image.Image | None,
     prompt: str,
     negative_prompt: str = DEFAULT_NEGATIVE_PROMPT,
     steps: int = 35,
@@ -230,30 +260,38 @@ def generate_image(
     low_threshold: int = 80,
     high_threshold: int = 180,
     lora_trigger: str = "",
+    lora_scale: float = 1.0,
     control_mode: str = DEFAULT_CONTROL_MODE,
-) -> Tuple[Image.Image, Image.Image, str]:
-    control_image = make_control_image(
-        sketch,
-        control_mode=control_mode,
-        low_threshold=low_threshold,
-        high_threshold=high_threshold,
-        size=size,
-    )
-
+) -> Tuple[Image.Image, Image.Image | None, str]:
     final_prompt = build_prompt(prompt, lora_trigger=lora_trigger)
     generator = torch.Generator(device=pipe.device).manual_seed(int(seed))
 
-    output = pipe(
-        prompt=final_prompt,
-        negative_prompt=negative_prompt,
-        image=control_image,
-        num_inference_steps=int(steps),
-        guidance_scale=float(guidance_scale),
-        controlnet_conditioning_scale=float(controlnet_conditioning_scale),
-        generator=generator,
-        width=size,
-        height=size,
-    ).images[0]
+    if getattr(pipe, "_artattack_lora_loaded", False) and hasattr(pipe, "set_adapters"):
+        pipe.set_adapters(["artattack"], adapter_weights=[float(lora_scale)])
+
+    generation_kwargs = {
+        "prompt": final_prompt,
+        "negative_prompt": negative_prompt,
+        "num_inference_steps": int(steps),
+        "guidance_scale": float(guidance_scale),
+        "generator": generator,
+        "width": size,
+        "height": size,
+    }
+
+    control_image = None
+    if control_mode != "none":
+        control_image = make_control_image(
+            sketch,
+            control_mode=control_mode,
+            low_threshold=low_threshold,
+            high_threshold=high_threshold,
+            size=size,
+        )
+        generation_kwargs["image"] = control_image
+        generation_kwargs["controlnet_conditioning_scale"] = float(controlnet_conditioning_scale)
+
+    output = pipe(**generation_kwargs).images[0]
 
     return output, control_image, final_prompt
 
@@ -261,13 +299,12 @@ def generate_image(
 # Save generated output files when the script is run from the command line.
 def save_generation(
     pipe,
-    sketch_path: str,
+    sketch_path: str | None,
     prompt: str,
-    output_path: str = "outputs/generated.png",
-    control_path: str = "outputs/control_image.png",
     **kwargs,
 ):
-    sketch = Image.open(sketch_path)
+    control_mode = kwargs.get("control_mode", DEFAULT_CONTROL_MODE)
+    sketch = None if control_mode == "none" else Image.open(sketch_path)
 
     image, control_image, final_prompt = generate_image(
         pipe=pipe,
@@ -276,25 +313,20 @@ def save_generation(
         **kwargs,
     )
 
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(control_path).parent.mkdir(parents=True, exist_ok=True)
-
-    image.save(output_path)
-    control_image.save(control_path)
+    input_path, output_path = save_latest_result(sketch, image)
 
     print("Generation complete.")
     print(f"Final prompt: {final_prompt}")
+    if input_path:
+        print(f"Input image saved to: {input_path}")
     print(f"Generated image saved to: {output_path}")
-    print(f"Control image saved to: {control_path}")
 
 
 # Define the command-line options for non-Gradio generation.
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate SDXL dark fantasy character from sketch.")
-    parser.add_argument("--sketch", default="examples/sample_sketches/sketch.png")
+    parser = argparse.ArgumentParser(description="Generate Art Attack SDXL dark fantasy character art.")
+    parser.add_argument("--sketch", default="")
     parser.add_argument("--prompt", default="full body dark fantasy knight holding a glowing sword")
-    parser.add_argument("--output", default="outputs/generated.png")
-    parser.add_argument("--control-output", default="outputs/control_image.png")
     parser.add_argument("--steps", type=int, default=35)
     parser.add_argument("--guidance", type=float, default=7.0)
     parser.add_argument("--control-scale", type=float, default=0.9)
@@ -302,9 +334,10 @@ def parse_args():
     parser.add_argument("--size", type=int, default=1024)
     parser.add_argument("--low-threshold", type=int, default=80)
     parser.add_argument("--high-threshold", type=int, default=180)
-    parser.add_argument("--control-mode", choices=sorted(CONTROL_MODELS), default=DEFAULT_CONTROL_MODE)
+    parser.add_argument("--control-mode", choices=CONTROL_MODES, default=DEFAULT_CONTROL_MODE)
     parser.add_argument("--lora-path", default="")
     parser.add_argument("--lora-trigger", default="")
+    parser.add_argument("--lora-scale", type=float, default=1.0)
     return parser.parse_args()
 
 
@@ -312,7 +345,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    if not os.path.exists(args.sketch):
+    if args.control_mode != "none" and not os.path.exists(args.sketch):
         raise FileNotFoundError(f"Sketch not found: {args.sketch}")
 
     pipe = load_pipeline(
@@ -324,8 +357,6 @@ if __name__ == "__main__":
         pipe=pipe,
         sketch_path=args.sketch,
         prompt=args.prompt,
-        output_path=args.output,
-        control_path=args.control_output,
         steps=args.steps,
         guidance_scale=args.guidance,
         controlnet_conditioning_scale=args.control_scale,
@@ -335,4 +366,5 @@ if __name__ == "__main__":
         high_threshold=args.high_threshold,
         control_mode=args.control_mode,
         lora_trigger=args.lora_trigger,
+        lora_scale=args.lora_scale,
     )

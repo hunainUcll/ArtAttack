@@ -9,3 +9,7 @@ gradio
 numpy
 huggingface_hub
 controlnet-aux
+datasets
+peft
+torchvision
+tensorboard

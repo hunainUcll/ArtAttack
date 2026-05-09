@@ -2,7 +2,10 @@ __pycache__/
 *.pyc
 .env
 venv/
-outputs/*.png
-outputs/*.log
+results/*.png
+results/*.log
 models/
 *.safetensors
+lora/train_dataset_300/images/
+lora/trained_lora/
+lora/diffusers_training_script/

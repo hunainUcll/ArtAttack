@@ -1,12 +1,13 @@
-"""Gradio app for Sketch2DarkFantasy."""
+"""Gradio app for Art Attack."""
 
 import os
 
 import gradio as gr
 
-from generate import generate_image, load_pipeline
+from generate import generate_image, load_pipeline, save_latest_result
 from src.config import (
     BASE_MODEL_ID,
+    CONTROL_MODES,
     CONTROL_MODELS,
     DEFAULT_CONTROL_MODE,
     DEFAULT_NEGATIVE_PROMPT,
@@ -28,7 +29,7 @@ def get_pipe(lora_path: str = "", control_mode: str = DEFAULT_CONTROL_MODE):
     global PIPE, CACHE_KEY
 
     lora_path = clean_text(lora_path)
-    control_mode = control_mode if control_mode in CONTROL_MODELS else DEFAULT_CONTROL_MODE
+    control_mode = control_mode if control_mode in CONTROL_MODES else DEFAULT_CONTROL_MODE
     cache_key = (lora_path, control_mode)
 
     if PIPE is None or CACHE_KEY != cache_key:
@@ -50,7 +51,7 @@ def settings_markdown(settings: dict) -> str:
 
 **Base model:** `{BASE_MODEL_ID}`
 **Conditioning mode:** `{settings["control_mode"]}`
-**Conditioning model:** `{CONTROL_MODELS[settings["control_mode"]]}`
+**Conditioning model:** `{CONTROL_MODELS.get(settings["control_mode"], "None")}`
 **Preset:** `{settings["preset_name"]}`
 **Image size:** `{settings["image_size"]}x{settings["image_size"]}`
 **Steps:** `{settings["steps"]}`
@@ -61,6 +62,9 @@ def settings_markdown(settings: dict) -> str:
 **Seed:** `{settings["seed"]}`
 **LoRA path:** `{settings["lora_path"] or "None"}`
 **LoRA trigger:** `{settings["lora_trigger"] or "None"}`
+**LoRA scale:** `{settings["lora_scale"]}`
+**Saved input:** `{settings["saved_input"] or "None"}`
+**Saved output:** `{settings["saved_output"]}`
 
 ### Final Prompt
 
@@ -86,10 +90,11 @@ def run_generation(
     high_threshold,
     lora_path,
     lora_trigger,
+    lora_scale,
     image_size,
     control_mode,
 ):
-    if sketch is None:
+    if sketch is None and control_mode != "none":
         raise gr.Error("Please upload or draw a sketch first.")
 
     prompt = clean_text(prompt) or PROMPT_PRESETS.get(preset_name, "")
@@ -113,8 +118,11 @@ def run_generation(
         low_threshold=int(low_threshold),
         high_threshold=int(high_threshold),
         lora_trigger=lora_trigger,
+        lora_scale=float(lora_scale),
         control_mode=control_mode,
     )
+
+    saved_input, saved_output = save_latest_result(sketch, generated)
 
     settings = {
         "control_mode": control_mode,
@@ -128,6 +136,9 @@ def run_generation(
         "seed": seed,
         "lora_path": lora_path,
         "lora_trigger": lora_trigger,
+        "lora_scale": lora_scale,
+        "saved_input": saved_input,
+        "saved_output": saved_output,
         "final_prompt": final_prompt,
         "negative_prompt": negative_prompt,
     }
@@ -136,18 +147,19 @@ def run_generation(
 
 
 # Build the Gradio user interface.
-with gr.Blocks(title="Sketch2DarkFantasy") as demo:
+with gr.Blocks(title="Art Attack") as demo:
     gr.Markdown(
         """
-# Sketch2DarkFantasy
+# Art Attack
 
 Generate dark fantasy character concept art from a rough sketch and a text prompt.
 
 This prototype uses:
 
-`Stable Diffusion XL + Pose/Scribble/Canny conditioning + optional LoRA`
+`Stable Diffusion XL + optional Pose/Scribble/Canny conditioning + optional LoRA`
 
 Pose mode is best for stick-figure body poses. Scribble mode is better for rough shape sketches.  
+None mode ignores the sketch and generates from the prompt only.
 The prompt controls the character details.  
 The optional LoRA controls the art style.
 """
@@ -173,7 +185,7 @@ The optional LoRA controls the art style.
     with gr.Accordion("Advanced Settings", open=True):
         with gr.Row():
             image_size = gr.Dropdown(choices=[768, 1024], value=1024, label="Image size")
-            control_mode = gr.Dropdown(choices=list(CONTROL_MODELS), value=DEFAULT_CONTROL_MODE, label="Sketch conditioning")
+            control_mode = gr.Dropdown(choices=CONTROL_MODES, value=DEFAULT_CONTROL_MODE, label="Sketch conditioning")
             steps = gr.Slider(minimum=20, maximum=60, value=35, step=1, label="Inference steps")
 
         with gr.Row():
@@ -198,10 +210,11 @@ Example trigger word:
         )
         lora_path = gr.Textbox(
             label="LoRA path",
-            value="",
+            value="lora/trained_lora",
             placeholder="Example: C:/Users/Admin/Documents/loras/artattackstyle.safetensors",
         )
-        lora_trigger = gr.Textbox(label="LoRA trigger word", value="", placeholder="Example: artattackstyle")
+        lora_trigger = gr.Textbox(label="LoRA trigger word", value="artattackstyle", placeholder="Example: artattackstyle")
+        lora_scale = gr.Slider(minimum=0.0, maximum=2.0, value=0.6, step=0.1, label="LoRA scale")
 
     settings_output = gr.Markdown(label="Settings")
 
@@ -221,6 +234,7 @@ Example trigger word:
             high_threshold,
             lora_path,
             lora_trigger,
+            lora_scale,
             image_size,
             control_mode,
         ],

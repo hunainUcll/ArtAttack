@@ -114,6 +114,12 @@ The main change is that pose is now the default conditioning mode in src/config.
   openpose-sdxl-1.0. I added make_pose_image() in generate.py:87 to convert the stick figure into a colored OpenPose-
   style skeleton instead of passing it as raw scribble lines.
 
-  
-  okay faizan here, hunain changed to using ppony diffusion xl but didnt actually test it there were many bugs and the resutls were extremely bad so i switch back to sdxl 
-  
+
+  okay faizan here, hunain changed to using ppony diffusion xl but didnt actually test it there were many bugs and the resutls were extremely bad so i switch back to sdxl
+
+
+  ok the pose (controlnet) model works beautifully buuut scribble is taking too much time it is horrible but i shall wait to see the results
+  after 800 seconds around 13 minutes results were absolutely shit
+  fuck scribble
+  but imma leave it in for maybe future developments
+okay buddyyyy thats soo bad canny took 10 minutes and the image gen is sooo bad it completely copies the stick figure and there is nothing being actually generated only the image is remade with a few more details thats it very bad
