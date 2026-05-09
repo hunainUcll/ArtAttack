@@ -2,9 +2,11 @@
 
 from typing import Literal
 
+# Model ids used by the SDXL generation pipeline.
 BASE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
 VAE_MODEL_ID = "madebyollin/sdxl-vae-fp16-fix"
 
+# ControlNet choices shown in the app and CLI.
 CONTROL_MODELS = {
     "pose": "thibaud/controlnet-openpose-sdxl-1.0",
     "scribble": "xinsir/controlnet-scribble-sdxl-1.0",
@@ -12,6 +14,7 @@ CONTROL_MODELS = {
 }
 DEFAULT_CONTROL_MODE: Literal["pose", "scribble", "canny"] = "pose"
 
+# Text that tells the model what to avoid.
 DEFAULT_NEGATIVE_PROMPT = (
     "low quality, worst quality, blurry, pixelated, bad anatomy, bad hands, "
     "extra fingers, missing fingers, extra limbs, missing limbs, deformed body, "
@@ -19,12 +22,14 @@ DEFAULT_NEGATIVE_PROMPT = (
     "cartoon, childish, stick figure, doodle, simple line art"
 )
 
+# Style text added to every prompt.
 STYLE_SUFFIX = (
     "dark fantasy character concept art, full body character, highly detailed, "
     "realistic, cinematic lighting, dramatic atmosphere, sharp focus, "
     "professional fantasy illustration, detailed armor, dark medieval background"
 )
 
+# Ready-made prompts for the dropdown in the app.
 PROMPT_PRESETS = {
     "Custom": "",
     "Dark Fantasy Knight": (
@@ -56,5 +61,3 @@ PROMPT_PRESETS = {
         "haunted forest background, realistic character concept art"
     ),
 }
-
-PRESETS = {key: value for key, value in PROMPT_PRESETS.items() if key != "Custom"}

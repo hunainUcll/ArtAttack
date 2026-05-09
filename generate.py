@@ -27,18 +27,12 @@ from src.config import (
 )
 
 
-def get_device() -> str:
-    return "cuda" if torch.cuda.is_available() else "cpu"
-
-
-def get_dtype():
-    return torch.float16 if get_device() == "cuda" else torch.float32
-
-
+# Resize every input sketch to the square size expected by SDXL ControlNet.
 def resize_image(image: Image.Image, size: int = 1024) -> Image.Image:
     return image.convert("RGB").resize((size, size))
 
 
+# Turn the sketch into a Canny edge control image.
 def make_canny_image(
     image: Image.Image,
     low_threshold: int = 80,
@@ -50,6 +44,7 @@ def make_canny_image(
     return Image.fromarray(np.repeat(edges[:, :, None], 3, axis=2))
 
 
+# Turn dark sketch lines into a high-contrast scribble control image.
 def make_scribble_image(
     image: Image.Image,
     size: int = 1024,
@@ -62,6 +57,7 @@ def make_scribble_image(
     return Image.fromarray(np.repeat(lines[:, :, None], 3, axis=2))
 
 
+# Colors used to make stick-figure lines look closer to OpenPose output.
 OPENPOSE_BODY_COLORS = [
     (255, 0, 0),
     (255, 85, 0),
@@ -84,12 +80,12 @@ OPENPOSE_BODY_COLORS = [
 ]
 
 
+# Convert a simple stick figure into an approximate OpenPose-style control map.
 def make_pose_image(
     image: Image.Image,
     size: int = 1024,
     threshold: int = 210,
 ) -> Image.Image:
-    """Approximate an OpenPose-style control map from a simple stick figure."""
     image = resize_image(image, size=size).convert("L")
     lines = np.where(np.array(image) < threshold, 255, 0).astype(np.uint8)
 
@@ -130,6 +126,7 @@ def make_pose_image(
     return Image.fromarray(canvas)
 
 
+# Pick the correct control image builder for the selected mode.
 def make_control_image(
     image: Image.Image,
     control_mode: str = DEFAULT_CONTROL_MODE,
@@ -152,28 +149,30 @@ def make_control_image(
     )
 
 
+# Build the final model prompt from the optional LoRA trigger, user prompt, and fixed style.
 def build_prompt(prompt: str, lora_trigger: str = "") -> str:
     parts = [part.strip() for part in (lora_trigger or "", prompt or "", STYLE_SUFFIX)]
     return ", ".join(part for part in parts if part)
 
+
+# Load SDXL, the selected ControlNet, and an optional LoRA.
 def load_pipeline(
     lora_path: str | None = None,
     control_mode: str = DEFAULT_CONTROL_MODE,
 ):
-    device = get_device()
-    dtype = get_dtype()
-
     if control_mode not in CONTROL_MODELS:
         raise ValueError(
             f"Unknown control mode: {control_mode}. "
             f"Expected one of: {', '.join(CONTROL_MODELS)}"
         )
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    variant = "fp16" if device == "cuda" else None
+
     print(f"Using device: {device}")
     controlnet_model_id = CONTROL_MODELS[control_mode]
-
     print(f"Loading {control_mode} ControlNet: {controlnet_model_id}")
-
     controlnet = ControlNetModel.from_pretrained(
         controlnet_model_id,
         torch_dtype=dtype,
@@ -191,7 +190,7 @@ def load_pipeline(
         controlnet=controlnet,
         vae=vae,
         torch_dtype=dtype,
-        variant="fp16" if device == "cuda" else None,
+        variant=variant,
         use_safetensors=True,
     )
 
@@ -217,6 +216,7 @@ def load_pipeline(
     return pipe
 
 
+# Generate one image from the sketch and return the generated image, control image, and final prompt.
 def generate_image(
     pipe,
     sketch: Image.Image,
@@ -232,7 +232,6 @@ def generate_image(
     lora_trigger: str = "",
     control_mode: str = DEFAULT_CONTROL_MODE,
 ) -> Tuple[Image.Image, Image.Image, str]:
-    device = get_device()
     control_image = make_control_image(
         sketch,
         control_mode=control_mode,
@@ -242,8 +241,7 @@ def generate_image(
     )
 
     final_prompt = build_prompt(prompt, lora_trigger=lora_trigger)
-
-    generator = torch.Generator(device=device).manual_seed(int(seed))
+    generator = torch.Generator(device=pipe.device).manual_seed(int(seed))
 
     output = pipe(
         prompt=final_prompt,
@@ -260,6 +258,7 @@ def generate_image(
     return output, control_image, final_prompt
 
 
+# Save generated output files when the script is run from the command line.
 def save_generation(
     pipe,
     sketch_path: str,
@@ -289,6 +288,7 @@ def save_generation(
     print(f"Control image saved to: {control_path}")
 
 
+# Define the command-line options for non-Gradio generation.
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate SDXL dark fantasy character from sketch.")
     parser.add_argument("--sketch", default="examples/sample_sketches/sketch.png")
@@ -308,6 +308,7 @@ def parse_args():
     return parser.parse_args()
 
 
+# Run one command-line generation if this file is executed directly.
 if __name__ == "__main__":
     args = parse_args()
 

@@ -13,14 +13,17 @@ from src.config import (
     PROMPT_PRESETS,
 )
 
+# Cached pipeline so the model is only reloaded when LoRA or ControlNet mode changes.
 PIPE = None
 CACHE_KEY = None
 
 
+# Normalize optional text input from Gradio.
 def clean_text(value: str | None) -> str:
     return (value or "").strip()
 
 
+# Return the cached pipeline, or load a new one if settings changed.
 def get_pipe(lora_path: str = "", control_mode: str = DEFAULT_CONTROL_MODE):
     global PIPE, CACHE_KEY
 
@@ -35,38 +38,41 @@ def get_pipe(lora_path: str = "", control_mode: str = DEFAULT_CONTROL_MODE):
     return PIPE
 
 
+# Fill the prompt box when the user chooses a preset.
 def apply_preset(preset_name: str):
     return PROMPT_PRESETS.get(preset_name, "")
 
 
-def settings_markdown(values: dict) -> str:
+# Show the exact generation settings after each run.
+def settings_markdown(settings: dict) -> str:
     return f"""
 ## Generation Settings
 
-**Base model:** `{BASE_MODEL_ID}`  
-**Conditioning mode:** `{values["control_mode"]}`  
-**Conditioning model:** `{CONTROL_MODELS[values["control_mode"]]}`  
-**Preset:** `{values["preset_name"]}`  
-**Image size:** `{values["image_size"]}x{values["image_size"]}`  
-**Steps:** `{values["steps"]}`  
-**Guidance scale:** `{values["guidance_scale"]}`  
-**Conditioning scale:** `{values["controlnet_conditioning_scale"]}`  
-**Canny low threshold:** `{values["low_threshold"]}`  
-**Canny high threshold:** `{values["high_threshold"]}`  
-**Seed:** `{values["seed"]}`  
-**LoRA path:** `{values["lora_path"] or "None"}`  
-**LoRA trigger:** `{values["lora_trigger"] or "None"}`  
+**Base model:** `{BASE_MODEL_ID}`
+**Conditioning mode:** `{settings["control_mode"]}`
+**Conditioning model:** `{CONTROL_MODELS[settings["control_mode"]]}`
+**Preset:** `{settings["preset_name"]}`
+**Image size:** `{settings["image_size"]}x{settings["image_size"]}`
+**Steps:** `{settings["steps"]}`
+**Guidance scale:** `{settings["guidance_scale"]}`
+**Conditioning scale:** `{settings["controlnet_conditioning_scale"]}`
+**Canny low threshold:** `{settings["low_threshold"]}`
+**Canny high threshold:** `{settings["high_threshold"]}`
+**Seed:** `{settings["seed"]}`
+**LoRA path:** `{settings["lora_path"] or "None"}`
+**LoRA trigger:** `{settings["lora_trigger"] or "None"}`
 
 ### Final Prompt
 
-`{values["final_prompt"]}`
+`{settings["final_prompt"]}`
 
 ### Negative Prompt
 
-`{values["negative_prompt"]}`
+`{settings["negative_prompt"]}`
 """
 
 
+# Validate Gradio inputs, call the generator, and format the result metadata.
 def run_generation(
     sketch,
     preset_name,
@@ -110,9 +116,26 @@ def run_generation(
         control_mode=control_mode,
     )
 
-    return generated, control_image, settings_markdown(locals())
+    settings = {
+        "control_mode": control_mode,
+        "preset_name": preset_name,
+        "image_size": image_size,
+        "steps": steps,
+        "guidance_scale": guidance_scale,
+        "controlnet_conditioning_scale": controlnet_conditioning_scale,
+        "low_threshold": low_threshold,
+        "high_threshold": high_threshold,
+        "seed": seed,
+        "lora_path": lora_path,
+        "lora_trigger": lora_trigger,
+        "final_prompt": final_prompt,
+        "negative_prompt": negative_prompt,
+    }
+
+    return generated, control_image, settings_markdown(settings)
 
 
+# Build the Gradio user interface.
 with gr.Blocks(title="Sketch2DarkFantasy") as demo:
     gr.Markdown(
         """
