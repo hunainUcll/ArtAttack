@@ -4,7 +4,7 @@ Art Attack is a semester project prototype that turns a rough sketch and a text 
 
 The project uses Stable Diffusion XL for image generation, optional ControlNet conditioning for sketches, and an experimental SDXL LoRA trained on fantasy RPG character art.
 
-## Features
+## Features 
 
 - Gradio interface in `app.py`
 - Prompt-only generation with `none` mode
